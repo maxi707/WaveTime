@@ -1,0 +1,9 @@
+DROP TABLE IF EXISTS notification_queue;
+DROP TABLE IF EXISTS admin_actions;
+DROP TABLE IF EXISTS attendance;
+DROP TABLE IF EXISTS payments;
+DROP TABLE IF EXISTS bookings;
+DROP TABLE IF EXISTS slots;
+DROP TABLE IF EXISTS training_types;
+DROP TABLE IF EXISTS pools;
+DROP TABLE IF EXISTS users;

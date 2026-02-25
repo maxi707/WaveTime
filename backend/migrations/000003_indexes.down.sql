@@ -1,0 +1,10 @@
+DROP INDEX IF EXISTS idx_notification_queue_user_created;
+DROP INDEX IF EXISTS idx_notification_queue_status_scheduled;
+DROP INDEX IF EXISTS idx_admin_actions_entity_created;
+DROP INDEX IF EXISTS idx_payments_created_at;
+DROP INDEX IF EXISTS idx_payments_booking_status;
+DROP INDEX IF EXISTS idx_bookings_reserved_until;
+DROP INDEX IF EXISTS idx_bookings_slot_status;
+DROP INDEX IF EXISTS idx_bookings_user_status_created;
+DROP INDEX IF EXISTS idx_slots_status_starts_at;
+DROP INDEX IF EXISTS idx_slots_pool_starts_at;
