@@ -4,7 +4,7 @@ Go REST API для WaveTime.
 
 ## Требования
 - Go 1.22+
-- PostgreSQL с накачанными миграциями из `backend/migrations`
+- PostgreSQL с накаченными миграциями из `backend/migrations`
 
 ## Переменные окружения
 - `DATABASE_URL` (обязательно), пример: `postgres://wavetime@localhost:5432/wavetime?sslmode=disable`
