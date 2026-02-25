@@ -13,6 +13,7 @@ const scheduleRange = reactive({
   to: plusDaysISO(7),
 })
 const schedule = ref([])
+const selectedSlotIds = ref(new Set())
 let filterTimer = null
 
 const groupedSchedule = computed(() => {
@@ -35,6 +36,7 @@ const scheduleStats = computed(() => {
   const availableSlots = schedule.value.filter((s) => s.free_count > 0).length
   return { totalSlots, totalFree, availableSlots }
 })
+const selectedCount = computed(() => selectedSlotIds.value.size)
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10)
@@ -87,6 +89,7 @@ async function loadSchedule() {
     scheduleRange.from,
     scheduleRange.to,
   )
+  selectedSlotIds.value = new Set()
 }
 
 function scheduleAutoReload() {
@@ -106,6 +109,47 @@ async function bookSlot(slotId) {
     setToast('Бронирование создано')
   } catch (e) {
     setToast(e.message)
+  } finally {
+    busy.value = false
+  }
+}
+
+function toggleSlotSelection(slotId) {
+  const next = new Set(selectedSlotIds.value)
+  if (next.has(slotId)) {
+    next.delete(slotId)
+  } else {
+    next.add(slotId)
+  }
+  selectedSlotIds.value = next
+}
+
+async function bookSelectedSlots() {
+  if (selectedSlotIds.value.size === 0) {
+    setToast('Выбери минимум один слот')
+    return
+  }
+
+  busy.value = true
+  try {
+    const ids = Array.from(selectedSlotIds.value)
+    let success = 0
+    for (const slotID of ids) {
+      try {
+        await createBooking(slotID)
+        success += 1
+      } catch {
+        // continue, aggregated result below
+      }
+    }
+    await loadSchedule()
+    if (success === ids.length) {
+      setToast(`Забронировано слотов: ${success}`)
+    } else if (success > 0) {
+      setToast(`Забронировано ${success} из ${ids.length}. Часть слотов уже недоступна.`)
+    } else {
+      setToast('Не удалось забронировать выбранные слоты')
+    }
   } finally {
     busy.value = false
   }
@@ -174,6 +218,13 @@ watch(
   </section>
 
   <section class="card reveal-b">
+    <div class="section-head">
+      <h3>Фильтры</h3>
+      <button class="btn primary" :disabled="busy || selectedCount === 0" @click="bookSelectedSlots">
+        Забронировать выбранные ({{ selectedCount }})
+      </button>
+    </div>
+
     <div class="form-grid four">
       <label>
         Бассейн
@@ -204,6 +255,7 @@ watch(
         <table>
           <thead>
             <tr>
+              <th>Выбор</th>
               <th>Время</th>
               <th>Тренировка</th>
               <th>Цена</th>
@@ -213,6 +265,14 @@ watch(
           </thead>
           <tbody>
             <tr v-for="slot in day.slots" :key="slot.id">
+              <td>
+                <input
+                  type="checkbox"
+                  :checked="selectedSlotIds.has(slot.id)"
+                  :disabled="busy || slot.free_count <= 0"
+                  @change="toggleSlotSelection(slot.id)"
+                />
+              </td>
               <td>{{ formatTime(slot.starts_at) }}</td>
               <td>{{ slot.training_type }}</td>
               <td>{{ slot.price }} ₽</td>

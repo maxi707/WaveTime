@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
   createAdminSlot,
   getMe,
@@ -28,6 +28,8 @@ const schedule = ref([])
 
 const bookings = ref([])
 const bookingStatusFilter = ref('')
+let scheduleReloadTimer = null
+let bookingsReloadTimer = null
 
 const createSlotForm = reactive({
   pool_id: '',
@@ -100,7 +102,14 @@ async function loadTrainingTypes() {
 }
 
 async function loadSchedule() {
-  if (!selectedPool.value) return
+  if (!selectedPool.value || !scheduleRange.from || !scheduleRange.to) {
+    schedule.value = []
+    return
+  }
+  if (scheduleRange.from > scheduleRange.to) {
+    schedule.value = []
+    return
+  }
   schedule.value = await listSchedule(
     Number(selectedPool.value),
     scheduleRange.from,
@@ -125,6 +134,28 @@ async function reloadAdminData() {
   } finally {
     busy.value = false
   }
+}
+
+function scheduleAutoReload() {
+  if (scheduleReloadTimer) window.clearTimeout(scheduleReloadTimer)
+  scheduleReloadTimer = window.setTimeout(async () => {
+    try {
+      await loadSchedule()
+    } catch (e) {
+      setToast(e.message || 'Не удалось обновить расписание')
+    }
+  }, 220)
+}
+
+function bookingsAutoReload() {
+  if (bookingsReloadTimer) window.clearTimeout(bookingsReloadTimer)
+  bookingsReloadTimer = window.setTimeout(async () => {
+    try {
+      await loadAdminBookings()
+    } catch (e) {
+      setToast(e.message || 'Не удалось обновить список бронирований')
+    }
+  }, 220)
 }
 
 async function saveSlot(slot) {
@@ -191,6 +222,25 @@ onMounted(async () => {
   await loadMe().catch((e) => setToast(e.message || 'Ошибка загрузки профиля'))
   await reloadAdminData()
 })
+
+onBeforeUnmount(() => {
+  if (scheduleReloadTimer) window.clearTimeout(scheduleReloadTimer)
+  if (bookingsReloadTimer) window.clearTimeout(bookingsReloadTimer)
+})
+
+watch(
+  () => [selectedPool.value, scheduleRange.from, scheduleRange.to],
+  () => {
+    scheduleAutoReload()
+  },
+)
+
+watch(
+  () => bookingStatusFilter.value,
+  () => {
+    bookingsAutoReload()
+  },
+)
 </script>
 
 <template>
@@ -209,7 +259,7 @@ onMounted(async () => {
   <section class="card reveal-b">
     <div class="section-head">
       <h3>Фильтр расписания</h3>
-      <button class="btn ghost" :disabled="busy" @click="reloadAdminData">Обновить</button>
+      <button class="btn ghost" :disabled="busy" @click="reloadAdminData">Обновить все данные</button>
     </div>
 
     <p v-if="pools.length === 0" class="error-text">
@@ -327,7 +377,7 @@ onMounted(async () => {
     <div class="form-grid four">
       <label>
         Фильтр статуса
-        <select v-model="bookingStatusFilter" @change="loadAdminBookings">
+        <select v-model="bookingStatusFilter">
           <option value="">all</option>
           <option value="pending_payment">pending_payment</option>
           <option value="reserved">reserved</option>

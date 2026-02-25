@@ -141,13 +141,22 @@ SELECT
     AND to_regclass('public.training_types') IS NOT NULL
     AND EXISTS (SELECT 1 FROM pools WHERE is_active = TRUE)
     AND EXISTS (SELECT 1 FROM training_types WHERE is_active = TRUE)
-  ) AS m6;"
+  ) AS m6,
+  (
+    EXISTS (
+      SELECT 1
+      FROM information_schema.columns
+      WHERE table_schema='public'
+        AND table_name='bookings'
+        AND column_name='seats_count'
+    )
+  ) AS m7;"
 }
 
 run_status() {
-  local raw m1 m2 m3 m4 m5 m6
+  local raw m1 m2 m3 m4 m5 m6 m7
   raw="$(migration_status_raw)"
-  IFS='|' read -r m1 m2 m3 m4 m5 m6 <<< "$raw"
+  IFS='|' read -r m1 m2 m3 m4 m5 m6 m7 <<< "$raw"
 
   echo "Status for $PGUSER@$PGHOST:$PGPORT/$PGDATABASE"
   printf "  [000001] extensions_and_types         : %s\n" "$( [[ "$m1" == "t" ]] && echo APPLIED || echo PENDING )"
@@ -156,8 +165,9 @@ run_status() {
   printf "  [000004] functions_and_triggers       : %s\n" "$( [[ "$m4" == "t" ]] && echo APPLIED || echo PENDING )"
   printf "  [000005] seed_default_admin           : %s\n" "$( [[ "$m5" == "t" ]] && echo APPLIED || echo PENDING )"
   printf "  [000006] seed_reference_data          : %s\n" "$( [[ "$m6" == "t" ]] && echo APPLIED || echo PENDING )"
+  printf "  [000007] booking_seats                : %s\n" "$( [[ "$m7" == "t" ]] && echo APPLIED || echo PENDING )"
 
-  if [[ "$m1$m2$m3$m4$m5$m6" == "tttttt" ]]; then
+  if [[ "$m1$m2$m3$m4$m5$m6$m7" == "ttttttt" ]]; then
     echo "Overall: OK"
   else
     echo "Overall: INCOMPLETE"
@@ -196,7 +206,7 @@ BEGIN
     RAISE EXCEPTION 'Expected 6 custom types, got %', v_types;
   END IF;
 
-  SELECT COUNT(*) INTO v_funcs
+  SELECT COUNT(DISTINCT p.proname) INTO v_funcs
   FROM pg_proc p
   JOIN pg_namespace n ON n.oid=p.pronamespace
   WHERE n.nspname='public'
@@ -263,6 +273,16 @@ BEGIN
 
   IF NOT EXISTS (SELECT 1 FROM training_types WHERE is_active = TRUE) THEN
     RAISE EXCEPTION 'Expected at least one active training type (seed reference data)';
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema='public'
+      AND table_name='bookings'
+      AND column_name='seats_count'
+  ) THEN
+    RAISE EXCEPTION 'Expected bookings.seats_count column (000007)';
   END IF;
 END
 $$;

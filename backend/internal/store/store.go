@@ -75,6 +75,7 @@ type Booking struct {
 	ID            int64      `json:"id"`
 	UserID        int64      `json:"user_id"`
 	SlotID        int64      `json:"slot_id"`
+	SeatsCount    int        `json:"seats_count"`
 	Status        string     `json:"status"`
 	ReservedUntil *time.Time `json:"reserved_until,omitempty"`
 	Price         string     `json:"price"`
@@ -174,7 +175,7 @@ FROM slots s
 JOIN pools p ON p.id = s.pool_id
 JOIN training_types t ON t.id = s.training_type_id
 LEFT JOIN (
-  SELECT slot_id, count(*)::int AS booked_count
+  SELECT slot_id, COALESCE(SUM(seats_count), 0)::int AS booked_count
   FROM bookings
   WHERE status IN ('pending_payment','reserved','confirmed','attended','no_show')
   GROUP BY slot_id
@@ -241,11 +242,15 @@ DO UPDATE
 SET status = 'pending_payment',
     reserved_until = NOW() + ($3::int || ' minutes')::interval,
     price = EXCLUDED.price,
-    cancel_reason = NULL
-WHERE bookings.status IN ('cancelled', 'expired')
-RETURNING id, user_id, slot_id, status::text, reserved_until, price::text, created_at`
+    cancel_reason = NULL,
+    seats_count = CASE
+      WHEN bookings.status IN ('cancelled', 'expired') THEN 1
+      ELSE bookings.seats_count + 1
+    END
+WHERE bookings.status IN ('pending_payment','reserved','confirmed','attended','no_show','cancelled','expired')
+RETURNING id, user_id, slot_id, seats_count, status::text, reserved_until, price::text, created_at`
 	err = tx.QueryRow(ctx, q, userID, slotID, reserveTTLMin).
-		Scan(&b.ID, &b.UserID, &b.SlotID, &b.Status, &b.ReservedUntil, &b.Price, &b.CreatedAt)
+		Scan(&b.ID, &b.UserID, &b.SlotID, &b.SeatsCount, &b.Status, &b.ReservedUntil, &b.Price, &b.CreatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) || isUnique(err) {
 			return Booking{}, ErrConflict
@@ -254,11 +259,12 @@ RETURNING id, user_id, slot_id, status::text, reserved_until, price::text, creat
 	}
 
 	q2 := `
-SELECT s.starts_at, p.name
+SELECT s.starts_at, p.name, t.name
 FROM slots s
 JOIN pools p ON p.id = s.pool_id
+JOIN training_types t ON t.id = s.training_type_id
 WHERE s.id = $1`
-	if err := tx.QueryRow(ctx, q2, slotID).Scan(&b.StartsAt, &b.PoolName); err != nil {
+	if err := tx.QueryRow(ctx, q2, slotID).Scan(&b.StartsAt, &b.PoolName, &b.TrainingType); err != nil {
 		return Booking{}, err
 	}
 
@@ -270,7 +276,7 @@ WHERE s.id = $1`
 
 func (s *Store) ListMyBookings(ctx context.Context, userID int64) ([]Booking, error) {
 	q := `
-SELECT b.id, b.user_id, b.slot_id, b.status::text, b.reserved_until, b.price::text, b.created_at,
+SELECT b.id, b.user_id, b.slot_id, b.seats_count, b.status::text, b.reserved_until, b.price::text, b.created_at,
        s.starts_at, p.name, t.name
 FROM bookings b
 JOIN slots s ON s.id = b.slot_id
@@ -287,7 +293,7 @@ ORDER BY s.starts_at DESC`
 	out := make([]Booking, 0)
 	for rows.Next() {
 		var b Booking
-		if err := rows.Scan(&b.ID, &b.UserID, &b.SlotID, &b.Status, &b.ReservedUntil, &b.Price, &b.CreatedAt, &b.StartsAt, &b.PoolName, &b.TrainingType); err != nil {
+		if err := rows.Scan(&b.ID, &b.UserID, &b.SlotID, &b.SeatsCount, &b.Status, &b.ReservedUntil, &b.Price, &b.CreatedAt, &b.StartsAt, &b.PoolName, &b.TrainingType); err != nil {
 			return nil, err
 		}
 		out = append(out, b)
@@ -309,6 +315,51 @@ WHERE id = $1 AND user_id = $2
 		return pgx.ErrNoRows
 	}
 	return nil
+}
+
+func (s *Store) AdjustBookingSeats(ctx context.Context, userID, bookingID int64, action string) error {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	var seatsCount int
+	var status string
+	if err := tx.QueryRow(ctx,
+		`SELECT seats_count, status::text FROM bookings WHERE id=$1 AND user_id=$2 FOR UPDATE`,
+		bookingID, userID,
+	).Scan(&seatsCount, &status); err != nil {
+		return err
+	}
+
+	if status != "pending_payment" && status != "reserved" && status != "confirmed" {
+		return ErrConflict
+	}
+
+	switch action {
+	case "inc":
+		if _, err := tx.Exec(ctx, `UPDATE bookings SET seats_count = seats_count + 1 WHERE id=$1`, bookingID); err != nil {
+			return err
+		}
+	case "dec":
+		if seatsCount > 1 {
+			if _, err := tx.Exec(ctx, `UPDATE bookings SET seats_count = seats_count - 1 WHERE id=$1`, bookingID); err != nil {
+				return err
+			}
+		} else {
+			if _, err := tx.Exec(ctx,
+				`UPDATE bookings SET status='cancelled', reserved_until=NULL, cancel_reason='cancelled_by_user' WHERE id=$1`,
+				bookingID,
+			); err != nil {
+				return err
+			}
+		}
+	default:
+		return ErrConflict
+	}
+
+	return tx.Commit(ctx)
 }
 
 func (s *Store) InitPayment(ctx context.Context, bookingID int64, provider, externalID string) (Payment, error) {

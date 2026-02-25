@@ -1,64 +1,34 @@
-# WaveTime Backend (Go REST API)
+# WaveTime Backend
+
+Go REST API для WaveTime.
 
 ## Требования
 - Go 1.22+
-- PostgreSQL со схемой из `backend/migrations`
+- PostgreSQL с накачанными миграциями из `backend/migrations`
 
 ## Переменные окружения
 - `DATABASE_URL` (обязательно), пример: `postgres://wavetime@localhost:5432/wavetime?sslmode=disable`
-- `APP_SECRET` (обязательно), секрет для подписи токенов
-- `HTTP_ADDR` (опционально, по умолчанию `:8080`)
-- `PGHOST/PGPORT/PGUSER/PGDATABASE` (для `migrations/migrate.sh`, не для API)
-
-## Быстрый запуск локального PG-кластера (для проверки)
-```bash
-# 1) Бинарники PostgreSQL
-export PG_BIN_DIR="..."
-export PATH="$PG_BIN_DIR:$PATH"
-
-# 2) Временный data-dir
-export PGDATA="/tmp/pgdata-wavetime"
-rm -rf "$PGDATA"
-
-# 3) Инициализировать и запустить кластер
-initdb -D "$PGDATA" --encoding=UTF8 --locale=C.UTF-8
-pg_ctl -D "$PGDATA" -l "$PGDATA/server.log" start
-
-# 4) Создать роль/БД приложения
-createuser -h localhost -p 5432 wavetime
-createdb  -h localhost -p 5432 -O wavetime wavetime
-
-# 5) Подключение для API и миграций
-export DATABASE_URL="postgres://wavetime@localhost:5432/wavetime?sslmode=disable"
-```
-
-Остановить и удалить кластер после проверки:
-```bash
-pg_ctl -D "$PGDATA" stop -m fast
-rm -rf "$PGDATA"
-```
+- `APP_SECRET` (обязательно), секрет подписи токенов
+- `HTTP_ADDR` (опционально), по умолчанию `:8080`
 
 ## Запуск
 ```bash
 cd backend
-GOTOOLCHAIN=local go run ./cmd/api
+export DATABASE_URL="postgres://wavetime@localhost:5432/wavetime?sslmode=disable"
+export APP_SECRET="dev-secret-change-me"
+go run ./cmd/api
 ```
 
 ## Сборка
 ```bash
 cd backend
-GOTOOLCHAIN=local go build ./...
+go build ./...
 ```
 
-## Быстрый цикл БД
-```bash
-cd backend
-./migrations/migrate.sh up
-./migrations/migrate.sh status
-./migrations/migrate.sh check
-```
+## API
 
-## REST API (MVP)
+### Service
+- `GET /healthz`
 
 ### Auth
 - `POST /auth/register`
@@ -72,11 +42,13 @@ cd backend
 
 ### Schedule
 - `GET /pools` (Bearer)
+- `GET /training-types` (Bearer)
 - `GET /schedule?pool_id&date_from=YYYY-MM-DD&date_to=YYYY-MM-DD` (Bearer)
 
 ### Bookings
 - `POST /bookings` (Bearer)
 - `GET /bookings/my` (Bearer)
+- `PATCH /bookings/{id}/seats` (Bearer, body: `{"action":"inc"|"dec"}`)
 - `DELETE /bookings/{id}` (Bearer)
 
 ### Payments
@@ -84,12 +56,14 @@ cd backend
 - `POST /payments/webhook`
 
 ### Admin
-- `GET /admin/bookings` (Bearer, role=admin)
-- `PATCH /admin/bookings/{id}` (Bearer, role=admin)
-- `POST /admin/slots` (Bearer, role=admin)
-- `PATCH /admin/slots/{id}` (Bearer, role=admin)
+- `GET /admin/bookings?status=&limit=` (Bearer, admin)
+- `PATCH /admin/bookings/{id}` (Bearer, admin)
+- `POST /admin/slots` (Bearer, admin)
+- `PATCH /admin/slots/{id}` (Bearer, admin)
 
-## Примечания
-- Авторизация сделана через подписанный bearer token (HMAC).
-- `refresh/logout` реализованы в stateless-варианте (без хранения сессий в БД).
-- Логика `booked_count` и защита от овербукинга опираются на триггеры/ограничения БД (Fat DB).
+## Замечания по реализации
+- Токены stateless (HMAC bearer token), хранения refresh-сессий в БД нет.
+- Логин выполняется по полю `login`, которое проверяется как `email` или `phone`.
+- Админ по умолчанию: `admin/admin` (создается миграцией `000005`).
+- Повторное бронирование того же слота пользователем увеличивает `seats_count`.
+- Расчет доступных мест в расписании учитывает сумму `seats_count` по активным броням.

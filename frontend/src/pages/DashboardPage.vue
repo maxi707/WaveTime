@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
+  adjustBookingSeats,
   applyWebhook,
   cancelBooking,
   getMe,
@@ -125,6 +126,32 @@ async function payAndConfirm(bookingId) {
   }
 }
 
+async function increaseSeats(bookingId) {
+  busy.value = true
+  try {
+    await adjustBookingSeats(bookingId, 'inc')
+    await loadBookings()
+    setToast('Количество мест увеличено')
+  } catch (e) {
+    setToast(e.message)
+  } finally {
+    busy.value = false
+  }
+}
+
+async function decreaseSeats(bookingId) {
+  busy.value = true
+  try {
+    await adjustBookingSeats(bookingId, 'dec')
+    await loadBookings()
+    setToast('Количество мест уменьшено')
+  } catch (e) {
+    setToast(e.message)
+  } finally {
+    busy.value = false
+  }
+}
+
 async function hydrate() {
   await loadMe()
   await loadBookings()
@@ -205,6 +232,7 @@ onMounted(async () => {
             <th>Бассейн</th>
             <th>Тренировка</th>
             <th>Старт</th>
+            <th>Мест</th>
             <th>Статус</th>
             <th>Цена</th>
             <th></th>
@@ -216,9 +244,24 @@ onMounted(async () => {
             <td>{{ booking.pool_name }}</td>
             <td>{{ booking.training_type }}</td>
             <td>{{ formatDateTime(booking.starts_at) }}</td>
+            <td>{{ booking.seats_count }}</td>
             <td><span class="badge" :class="bookingBadgeClass(booking.status)">{{ booking.status }}</span></td>
             <td>{{ booking.price }} ₽</td>
             <td class="actions">
+              <button
+                class="btn small"
+                :disabled="busy || !['pending_payment', 'reserved', 'confirmed'].includes(booking.status)"
+                @click="increaseSeats(booking.id)"
+              >
+                +1
+              </button>
+              <button
+                class="btn small ghost"
+                :disabled="busy || !['pending_payment', 'reserved', 'confirmed'].includes(booking.status)"
+                @click="decreaseSeats(booking.id)"
+              >
+                -1
+              </button>
               <button
                 class="btn small"
                 :disabled="busy || booking.status !== 'pending_payment'"
@@ -236,7 +279,7 @@ onMounted(async () => {
             </td>
           </tr>
           <tr v-if="bookings.length === 0">
-            <td colspan="7" class="empty">Бронирований пока нет. Перейди в раздел "Расписание" в шапке.</td>
+            <td colspan="8" class="empty">Бронирований пока нет. Перейди в раздел "Расписание" в шапке.</td>
           </tr>
         </tbody>
       </table>

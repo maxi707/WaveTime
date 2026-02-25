@@ -54,6 +54,7 @@ func (a *API) routes() {
 
 	a.mux.HandleFunc("POST /bookings", a.authRequired(a.handleBookingCreate))
 	a.mux.HandleFunc("GET /bookings/my", a.authRequired(a.handleMyBookings))
+	a.mux.HandleFunc("PATCH /bookings/", a.authRequired(a.handleBookingSeatsUpdate))
 	a.mux.HandleFunc("DELETE /bookings/", a.authRequired(a.handleBookingDelete))
 
 	a.mux.HandleFunc("POST /payments/init", a.authRequired(a.handlePaymentInit))
@@ -271,6 +272,41 @@ func (a *API) handleBookingDelete(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		errorResponse(w, http.StatusBadRequest, "failed to cancel booking")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *API) handleBookingSeatsUpdate(w http.ResponseWriter, r *http.Request) {
+	cl := claimsFromCtx(r.Context())
+	bookingID, err := parseIDFromPathWithSuffix(r.URL.Path, "/bookings/", "/seats")
+	if err != nil {
+		errorResponse(w, http.StatusBadRequest, "invalid booking id")
+		return
+	}
+
+	var req struct {
+		Action string `json:"action"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		errorResponse(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if req.Action != "inc" && req.Action != "dec" {
+		errorResponse(w, http.StatusBadRequest, "action must be inc or dec")
+		return
+	}
+
+	if err := a.store.AdjustBookingSeats(r.Context(), cl.UserID, bookingID, req.Action); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			errorResponse(w, http.StatusNotFound, "booking not found")
+			return
+		}
+		if errors.Is(err, store.ErrConflict) {
+			errorResponse(w, http.StatusConflict, "booking cannot be adjusted in current status")
+			return
+		}
+		errorResponse(w, http.StatusBadRequest, "failed to adjust booking seats")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -518,6 +554,18 @@ func parseIDFromPath(path, prefix string) (int64, error) {
 	}
 	raw := strings.TrimPrefix(path, prefix)
 	if strings.Contains(raw, "/") {
+		return 0, fmt.Errorf("bad path")
+	}
+	return strconv.ParseInt(raw, 10, 64)
+}
+
+func parseIDFromPathWithSuffix(path, prefix, suffix string) (int64, error) {
+	if !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, suffix) {
+		return 0, fmt.Errorf("bad path")
+	}
+	raw := strings.TrimPrefix(path, prefix)
+	raw = strings.TrimSuffix(raw, suffix)
+	if raw == "" || strings.Contains(raw, "/") {
 		return 0, fmt.Errorf("bad path")
 	}
 	return strconv.ParseInt(raw, 10, 64)

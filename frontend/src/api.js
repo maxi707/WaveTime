@@ -100,6 +100,13 @@ export async function cancelBooking(id) {
   return request(`/bookings/${id}`, { method: 'DELETE' }, true)
 }
 
+export async function adjustBookingSeats(id, action) {
+  return request(`/bookings/${id}/seats`, {
+    method: 'PATCH',
+    body: JSON.stringify({ action }),
+  }, true)
+}
+
 export async function initPayment(bookingId) {
   return request('/payments/init', {
     method: 'POST',
