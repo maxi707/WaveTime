@@ -1,5 +1,10 @@
 <script setup>
-import { nextTick, onBeforeUnmount, onMounted } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { clearToken, getAuthChangedEventName, isAuthed } from '../lib/session'
+
+const router = useRouter()
+const authed = ref(isAuthed())
 
 function syncScrollMode() {
   const scrolling = document.scrollingElement || document.documentElement
@@ -18,15 +23,28 @@ function scheduleSync() {
 
 onMounted(async () => {
   await nextTick()
+  authed.value = isAuthed()
   scheduleSync()
   window.addEventListener('resize', scheduleSync)
+  window.addEventListener(getAuthChangedEventName(), handleAuthChanged)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', scheduleSync)
+  window.removeEventListener(getAuthChangedEventName(), handleAuthChanged)
   document.documentElement.style.overflowY = 'auto'
   document.body.style.overflowY = 'auto'
 })
+
+function handleAuthChanged() {
+  authed.value = isAuthed()
+}
+
+async function logout() {
+  clearToken()
+  authed.value = false
+  await router.replace('/')
+}
 </script>
 
 <template>
@@ -55,8 +73,9 @@ onBeforeUnmount(() => {
         </p>
 
         <div class="hero-actions">
-          <RouterLink class="btn primary hero-btn" to="/register">Создать аккаунт</RouterLink>
-          <RouterLink class="btn ghost hero-btn" to="/login">Войти в кабинет</RouterLink>
+          <RouterLink v-if="!authed" class="btn primary hero-btn" to="/register">Создать аккаунт</RouterLink>
+          <RouterLink v-if="!authed" class="btn ghost hero-btn" to="/login">Войти в кабинет</RouterLink>
+          <button v-if="authed" class="btn danger hero-btn" @click="logout">Выйти</button>
         </div>
 
         <div class="hero-points">

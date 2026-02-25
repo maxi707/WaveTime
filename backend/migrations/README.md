@@ -4,17 +4,13 @@
 
 ## 1. Предусловия
 
-Используй бинарники PostgreSQL из каталога:
+Использовать бинарники PostgreSQL (`PG_BIN_DIR`).
+
+Чтобы не конфликтовать с другими проектами на том же сервере PostgreSQL, обязательно создать отдельные пользователя и БД:
 
 ```bash
-$HOME/ARENADATA/github/orioledb/output_bin/bin
-```
-
-Чтобы не конфликтовать с другими проектами на том же сервере PostgreSQL, обязательно создай отдельные пользователя и БД:
-
-```bash
-$HOME/ARENADATA/github/orioledb/output_bin/bin/createuser -h localhost -p 5432 wavetime
-$HOME/ARENADATA/github/orioledb/output_bin/bin/createdb  -h localhost -p 5432 -O wavetime wavetime
+createuser -h localhost -p 5432 wavetime
+createdb  -h localhost -p 5432 -O wavetime wavetime
 ```
 
 Примечание: команды выше выполняются пользователем PostgreSQL с правами на создание ролей/баз.
@@ -27,37 +23,45 @@ $HOME/ARENADATA/github/orioledb/output_bin/bin/createdb  -h localhost -p 5432 -O
 2. `000002_core_tables.up.sql`
 3. `000003_indexes.up.sql`
 4. `000004_functions_and_triggers.up.sql`
+5. `000005_seed_default_admin.up.sql`
+6. `000006_seed_reference_data.up.sql`
 
 Пример ручного применения через `psql`:
 
 ```bash
-export PATH="$HOME/ARENADATA/github/orioledb/output_bin/bin:$PATH"
-
 psql -h localhost -p 5432 -U wavetime -d wavetime -v ON_ERROR_STOP=1 -f backend/migrations/000001_extensions_and_types.up.sql
 psql -h localhost -p 5432 -U wavetime -d wavetime -v ON_ERROR_STOP=1 -f backend/migrations/000002_core_tables.up.sql
 psql -h localhost -p 5432 -U wavetime -d wavetime -v ON_ERROR_STOP=1 -f backend/migrations/000003_indexes.up.sql
 psql -h localhost -p 5432 -U wavetime -d wavetime -v ON_ERROR_STOP=1 -f backend/migrations/000004_functions_and_triggers.up.sql
+psql -h localhost -p 5432 -U wavetime -d wavetime -v ON_ERROR_STOP=1 -f backend/migrations/000005_seed_default_admin.up.sql
+psql -h localhost -p 5432 -U wavetime -d wavetime -v ON_ERROR_STOP=1 -f backend/migrations/000006_seed_reference_data.up.sql
 ```
 
 ## 3. Откат (`down`)
 
 Откат выполняется в обратном порядке:
 
-1. `000004_functions_and_triggers.down.sql`
-2. `000003_indexes.down.sql`
-3. `000002_core_tables.down.sql`
-4. `000001_extensions_and_types.down.sql`
+1. `000006_seed_reference_data.down.sql`
+2. `000005_seed_default_admin.down.sql`
+3. `000004_functions_and_triggers.down.sql`
+4. `000003_indexes.down.sql`
+5. `000002_core_tables.down.sql`
+6. `000001_extensions_and_types.down.sql`
 
 Пример:
 
 ```bash
-export PATH="$HOME/ARENADATA/github/orioledb/output_bin/bin:$PATH"
-
+psql -h localhost -p 5432 -U wavetime -d wavetime -v ON_ERROR_STOP=1 -f backend/migrations/000006_seed_reference_data.down.sql
+psql -h localhost -p 5432 -U wavetime -d wavetime -v ON_ERROR_STOP=1 -f backend/migrations/000005_seed_default_admin.down.sql
 psql -h localhost -p 5432 -U wavetime -d wavetime -v ON_ERROR_STOP=1 -f backend/migrations/000004_functions_and_triggers.down.sql
 psql -h localhost -p 5432 -U wavetime -d wavetime -v ON_ERROR_STOP=1 -f backend/migrations/000003_indexes.down.sql
 psql -h localhost -p 5432 -U wavetime -d wavetime -v ON_ERROR_STOP=1 -f backend/migrations/000002_core_tables.down.sql
 psql -h localhost -p 5432 -U wavetime -d wavetime -v ON_ERROR_STOP=1 -f backend/migrations/000001_extensions_and_types.down.sql
 ```
+
+Default admin seed after `up`:
+- login: `admin`
+- password: `admin`
 
 ## 4. Быстрая проверка после `up`
 

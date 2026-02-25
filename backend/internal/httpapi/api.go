@@ -49,6 +49,7 @@ func (a *API) routes() {
 	a.mux.HandleFunc("PATCH /me", a.authRequired(a.handleMeUpdate))
 
 	a.mux.HandleFunc("GET /pools", a.authRequired(a.handlePools))
+	a.mux.HandleFunc("GET /training-types", a.authRequired(a.handleTrainingTypes))
 	a.mux.HandleFunc("GET /schedule", a.authRequired(a.handleSchedule))
 
 	a.mux.HandleFunc("POST /bookings", a.authRequired(a.handleBookingCreate))
@@ -190,6 +191,15 @@ func (a *API) handlePools(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonResponse(w, http.StatusOK, pools)
+}
+
+func (a *API) handleTrainingTypes(w http.ResponseWriter, r *http.Request) {
+	types, err := a.store.ListTrainingTypes(r.Context())
+	if err != nil {
+		errorResponse(w, http.StatusInternalServerError, "failed to list training types")
+		return
+	}
+	jsonResponse(w, http.StatusOK, types)
 }
 
 func (a *API) handleSchedule(w http.ResponseWriter, r *http.Request) {

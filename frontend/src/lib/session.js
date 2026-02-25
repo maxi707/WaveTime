@@ -1,13 +1,23 @@
+const AUTH_CHANGED_EVENT = 'wavetime-auth-changed'
+
+function notifyAuthChanged() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(AUTH_CHANGED_EVENT))
+  }
+}
+
 export function getToken() {
   return localStorage.getItem('wavetime_token') || ''
 }
 
 export function setToken(token) {
   localStorage.setItem('wavetime_token', token)
+  notifyAuthChanged()
 }
 
 export function clearToken() {
   localStorage.removeItem('wavetime_token')
+  notifyAuthChanged()
 }
 
 export function isAuthed() {
@@ -38,4 +48,8 @@ export function getUserRole() {
 
 export function isAdmin() {
   return getUserRole() === 'admin'
+}
+
+export function getAuthChangedEventName() {
+  return AUTH_CHANGED_EVENT
 }

@@ -125,21 +125,39 @@ SELECT
         AND c.relname='bookings'
         AND t.tgname='trg_bookings_sync_slot_booked_count'
     )
-  ) AS m4;"
+  ) AS m4,
+  (
+    to_regclass('public.users') IS NOT NULL
+    AND EXISTS (
+      SELECT 1
+      FROM users
+      WHERE phone = 'admin'
+        AND role = 'admin'
+        AND is_active = TRUE
+    )
+  ) AS m5,
+  (
+    to_regclass('public.pools') IS NOT NULL
+    AND to_regclass('public.training_types') IS NOT NULL
+    AND EXISTS (SELECT 1 FROM pools WHERE is_active = TRUE)
+    AND EXISTS (SELECT 1 FROM training_types WHERE is_active = TRUE)
+  ) AS m6;"
 }
 
 run_status() {
-  local raw m1 m2 m3 m4
+  local raw m1 m2 m3 m4 m5 m6
   raw="$(migration_status_raw)"
-  IFS='|' read -r m1 m2 m3 m4 <<< "$raw"
+  IFS='|' read -r m1 m2 m3 m4 m5 m6 <<< "$raw"
 
   echo "Status for $PGUSER@$PGHOST:$PGPORT/$PGDATABASE"
   printf "  [000001] extensions_and_types         : %s\n" "$( [[ "$m1" == "t" ]] && echo APPLIED || echo PENDING )"
   printf "  [000002] core_tables                  : %s\n" "$( [[ "$m2" == "t" ]] && echo APPLIED || echo PENDING )"
   printf "  [000003] indexes                      : %s\n" "$( [[ "$m3" == "t" ]] && echo APPLIED || echo PENDING )"
   printf "  [000004] functions_and_triggers       : %s\n" "$( [[ "$m4" == "t" ]] && echo APPLIED || echo PENDING )"
+  printf "  [000005] seed_default_admin           : %s\n" "$( [[ "$m5" == "t" ]] && echo APPLIED || echo PENDING )"
+  printf "  [000006] seed_reference_data          : %s\n" "$( [[ "$m6" == "t" ]] && echo APPLIED || echo PENDING )"
 
-  if [[ "$m1$m2$m3$m4" == "tttt" ]]; then
+  if [[ "$m1$m2$m3$m4$m5$m6" == "tttttt" ]]; then
     echo "Overall: OK"
   else
     echo "Overall: INCOMPLETE"
@@ -227,6 +245,24 @@ BEGIN
 
   IF v_triggers <> 8 THEN
     RAISE EXCEPTION 'Expected 8 triggers, got %', v_triggers;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM users
+    WHERE phone = 'admin'
+      AND role = 'admin'
+      AND is_active = TRUE
+  ) THEN
+    RAISE EXCEPTION 'Expected default admin user with login admin';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pools WHERE is_active = TRUE) THEN
+    RAISE EXCEPTION 'Expected at least one active pool (seed reference data)';
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM training_types WHERE is_active = TRUE) THEN
+    RAISE EXCEPTION 'Expected at least one active training type (seed reference data)';
   END IF;
 END
 $$;

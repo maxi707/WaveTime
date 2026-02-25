@@ -19,7 +19,8 @@ async function submit() {
   try {
     const r = await loginUser(form)
     setToken(r.token)
-    await router.push('/app')
+    const target = r?.user?.role === 'admin' ? '/admin' : '/app'
+    await router.push(target)
   } catch (e) {
     error.value = e.message
   } finally {

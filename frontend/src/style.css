@@ -160,6 +160,50 @@ a {
   gap: 10px;
 }
 
+.user-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  max-width: 240px;
+}
+
+.user-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 0.78rem;
+  color: #042436;
+  background: linear-gradient(145deg, var(--accent), var(--accent-2));
+  flex: 0 0 auto;
+}
+
+.user-meta {
+  min-width: 0;
+  display: grid;
+  line-height: 1.1;
+}
+
+.user-meta strong {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.86rem;
+}
+
+.user-meta small {
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  font-size: 0.68rem;
+}
+
 .chip {
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -173,6 +217,7 @@ a {
   margin-top: var(--space-5);
   display: grid;
   gap: var(--space-4);
+  padding-bottom: var(--space-4);
   flex: 1 0 auto;
   align-content: start;
 }

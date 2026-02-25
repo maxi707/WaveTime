@@ -7,6 +7,7 @@ import {
   listAdminBookings,
   listPools,
   listSchedule,
+  listTrainingTypes,
   updateAdminBooking,
   updateAdminSlot,
 } from '../api'
@@ -17,6 +18,7 @@ const busy = ref(false)
 const user = ref(null)
 
 const pools = ref([])
+const trainingTypes = ref([])
 const selectedPool = ref('')
 const scheduleRange = reactive({
   from: todayISO(),
@@ -29,7 +31,7 @@ const bookingStatusFilter = ref('')
 
 const createSlotForm = reactive({
   pool_id: '',
-  training_type_id: '1',
+  training_type_id: '',
   starts_at: '',
   capacity: 10,
   price: '800',
@@ -61,12 +63,6 @@ function formatDateTime(v) {
   })
 }
 
-function toInputDateTime(startsAt) {
-  const date = new Date(startsAt)
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000)
-  return local.toISOString().slice(0, 16)
-}
-
 function toRFC3339(value) {
   if (!value) return ''
   const d = new Date(value)
@@ -96,6 +92,13 @@ async function loadPools() {
   }
 }
 
+async function loadTrainingTypes() {
+  trainingTypes.value = await listTrainingTypes()
+  if (!createSlotForm.training_type_id && trainingTypes.value.length > 0) {
+    createSlotForm.training_type_id = String(trainingTypes.value[0].id)
+  }
+}
+
 async function loadSchedule() {
   if (!selectedPool.value) return
   schedule.value = await listSchedule(
@@ -107,6 +110,21 @@ async function loadSchedule() {
 
 async function loadAdminBookings() {
   bookings.value = await listAdminBookings(bookingStatusFilter.value, 200)
+}
+
+async function reloadAdminData() {
+  busy.value = true
+  try {
+    await loadPools()
+    await loadTrainingTypes()
+    await loadSchedule()
+    await loadAdminBookings()
+    setToast('Данные админки обновлены')
+  } catch (e) {
+    setToast(e.message || 'Не удалось обновить данные админки')
+  } finally {
+    busy.value = false
+  }
 }
 
 async function saveSlot(slot) {
@@ -131,6 +149,10 @@ async function createSlot() {
     const starts = toRFC3339(createSlotForm.starts_at)
     if (!starts) {
       setToast('Укажи starts_at')
+      return
+    }
+    if (!createSlotForm.training_type_id) {
+      setToast('Выбери тип тренировки')
       return
     }
 
@@ -166,14 +188,8 @@ async function updateBookingStatus(bookingId, nextStatus) {
 
 onMounted(async () => {
   await checkBackend()
-  try {
-    await loadMe()
-    await loadPools()
-    await loadSchedule()
-    await loadAdminBookings()
-  } catch (e) {
-    setToast(e.message || 'Ошибка загрузки админ-данных')
-  }
+  await loadMe().catch((e) => setToast(e.message || 'Ошибка загрузки профиля'))
+  await reloadAdminData()
 })
 </script>
 
@@ -193,13 +209,18 @@ onMounted(async () => {
   <section class="card reveal-b">
     <div class="section-head">
       <h3>Фильтр расписания</h3>
-      <button class="btn ghost" :disabled="busy" @click="loadSchedule">Обновить</button>
+      <button class="btn ghost" :disabled="busy" @click="reloadAdminData">Обновить</button>
     </div>
+
+    <p v-if="pools.length === 0" class="error-text">
+      Список бассейнов пуст или не загрузился. Нажми «Обновить» или проверь backend/API.
+    </p>
 
     <div class="form-grid four">
       <label>
         Бассейн
         <select v-model="selectedPool">
+          <option v-if="pools.length === 0" value="" disabled>Нет доступных бассейнов</option>
           <option v-for="pool in pools" :key="pool.id" :value="String(pool.id)">
             {{ pool.name }}
           </option>
@@ -220,14 +241,20 @@ onMounted(async () => {
       <label>
         Бассейн
         <select v-model="createSlotForm.pool_id">
+          <option v-if="pools.length === 0" value="" disabled>Нет доступных бассейнов</option>
           <option v-for="pool in pools" :key="pool.id" :value="String(pool.id)">
             {{ pool.name }}
           </option>
         </select>
       </label>
       <label>
-        Training Type ID
-        <input v-model="createSlotForm.training_type_id" type="number" min="1" />
+        Тип тренировки
+        <select v-model="createSlotForm.training_type_id">
+          <option v-if="trainingTypes.length === 0" value="" disabled>Нет доступных типов тренировок</option>
+          <option v-for="type in trainingTypes" :key="type.id" :value="String(type.id)">
+            {{ type.name }} ({{ type.duration_minutes }} мин, от {{ type.price }} ₽)
+          </option>
+        </select>
       </label>
       <label>
         starts_at

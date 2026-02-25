@@ -29,7 +29,7 @@ router.beforeEach((to) => {
   }
 
   if (to.meta.guestOnly && authed) {
-    return { name: 'app' }
+    return isAdmin() ? { name: 'admin' } : { name: 'app' }
   }
 
   if (to.meta.requiresAdmin && !isAdmin()) {

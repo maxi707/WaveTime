@@ -203,6 +203,7 @@ onMounted(async () => {
           <tr>
             <th>ID</th>
             <th>Бассейн</th>
+            <th>Тренировка</th>
             <th>Старт</th>
             <th>Статус</th>
             <th>Цена</th>
@@ -213,6 +214,7 @@ onMounted(async () => {
           <tr v-for="booking in bookings" :key="booking.id">
             <td>#{{ booking.id }}</td>
             <td>{{ booking.pool_name }}</td>
+            <td>{{ booking.training_type }}</td>
             <td>{{ formatDateTime(booking.starts_at) }}</td>
             <td><span class="badge" :class="bookingBadgeClass(booking.status)">{{ booking.status }}</span></td>
             <td>{{ booking.price }} ₽</td>
@@ -234,7 +236,7 @@ onMounted(async () => {
             </td>
           </tr>
           <tr v-if="bookings.length === 0">
-            <td colspan="6" class="empty">Бронирований пока нет. Перейди в раздел "Расписание" в шапке.</td>
+            <td colspan="7" class="empty">Бронирований пока нет. Перейди в раздел "Расписание" в шапке.</td>
           </tr>
         </tbody>
       </table>

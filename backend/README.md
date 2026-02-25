@@ -13,7 +13,7 @@
 ## Быстрый запуск локального PG-кластера (для проверки)
 ```bash
 # 1) Бинарники PostgreSQL
-export PG_BIN_DIR="$HOME/ARENADATA/github/orioledb/output_bin/bin"
+export PG_BIN_DIR="..."
 export PATH="$PG_BIN_DIR:$PATH"
 
 # 2) Временный data-dir

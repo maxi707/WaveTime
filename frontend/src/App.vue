@@ -1,12 +1,23 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
-import { RouterLink, RouterView, useRoute } from 'vue-router'
-import { isAdmin, isAuthed } from './lib/session'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
+import { getMe } from './api'
+import { clearToken, getAuthChangedEventName, isAdmin, isAuthed } from './lib/session'
 
 const route = useRoute()
+const router = useRouter()
 const theme = ref(localStorage.getItem('wavetime_theme') || 'ocean-dark')
-const authed = computed(() => isAuthed())
-const admin = computed(() => isAdmin())
+const authTick = ref(0)
+const nickname = ref('')
+const userRole = ref('')
+const authed = computed(() => {
+  authTick.value
+  return isAuthed()
+})
+const admin = computed(() => {
+  authTick.value
+  return isAdmin()
+})
 
 const pageTitle = computed(() => {
   if (route.path === '/app') return 'Кабинет клиента'
@@ -17,6 +28,13 @@ const pageTitle = computed(() => {
   return 'Бронирование бассейнов'
 })
 const currentYear = new Date().getFullYear()
+const userInitials = computed(() => {
+  const source = nickname.value.trim()
+  if (!source) return 'WT'
+  const parts = source.split(/\s+/).filter(Boolean)
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[1][0]).toUpperCase()
+})
 
 function applyTheme(nextTheme) {
   theme.value = nextTheme
@@ -28,8 +46,44 @@ function toggleTheme() {
   applyTheme(theme.value === 'ocean-dark' ? 'ocean-light' : 'ocean-dark')
 }
 
+function onAuthChanged() {
+  authTick.value += 1
+  void refreshIdentity()
+}
+
+async function refreshIdentity() {
+  if (!isAuthed()) {
+    nickname.value = ''
+    userRole.value = ''
+    return
+  }
+  try {
+    const me = await getMe()
+    nickname.value = me.full_name || me.phone || me.email || `User #${me.id}`
+    userRole.value = me.role || ''
+  } catch {
+    clearToken()
+    nickname.value = ''
+    userRole.value = ''
+    await router.replace('/login')
+  }
+}
+
+async function logout() {
+  clearToken()
+  nickname.value = ''
+  userRole.value = ''
+  await router.replace('/')
+}
+
 onMounted(() => {
   applyTheme(theme.value)
+  window.addEventListener(getAuthChangedEventName(), onAuthChanged)
+  void refreshIdentity()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener(getAuthChangedEventName(), onAuthChanged)
 })
 </script>
 
@@ -52,6 +106,14 @@ onMounted(() => {
         <RouterLink v-if="authed" class="chip" to="/schedule">Расписание</RouterLink>
         <RouterLink v-if="authed" class="chip" to="/app">Кабинет</RouterLink>
         <RouterLink v-if="admin" class="chip" to="/admin">Админка</RouterLink>
+        <div v-if="authed" class="user-pill">
+          <span class="user-avatar">{{ userInitials }}</span>
+          <span class="user-meta">
+            <strong>{{ nickname || 'Пользователь' }}</strong>
+            <small>{{ userRole }}</small>
+          </span>
+        </div>
+        <button v-if="authed" class="btn danger" @click="logout">Выйти</button>
         <button class="btn ghost" @click="toggleTheme">
           Тема: {{ theme === 'ocean-dark' ? 'Ночь' : 'День' }}
         </button>

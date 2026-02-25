@@ -71,6 +71,10 @@ export async function listPools() {
   return request('/pools', { method: 'GET' }, true)
 }
 
+export async function listTrainingTypes() {
+  return request('/training-types', { method: 'GET' }, true)
+}
+
 export async function listSchedule(poolId, dateFrom, dateTo) {
   const params = new URLSearchParams({
     pool_id: String(poolId),

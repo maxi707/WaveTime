@@ -48,6 +48,14 @@ type Pool struct {
 	Timezone string `json:"timezone"`
 }
 
+type TrainingType struct {
+	ID              int64  `json:"id"`
+	Name            string `json:"name"`
+	DurationMinutes int    `json:"duration_minutes"`
+	DefaultCapacity int    `json:"default_capacity"`
+	Price           string `json:"price"`
+}
+
 type Slot struct {
 	ID             int64     `json:"id"`
 	PoolID         int64     `json:"pool_id"`
@@ -73,6 +81,7 @@ type Booking struct {
 	CreatedAt     time.Time  `json:"created_at"`
 	StartsAt      time.Time  `json:"starts_at"`
 	PoolName      string     `json:"pool_name"`
+	TrainingType  string     `json:"training_type"`
 }
 
 type Payment struct {
@@ -159,11 +168,17 @@ func (s *Store) ListPools(ctx context.Context) ([]Pool, error) {
 func (s *Store) ListSchedule(ctx context.Context, poolID int64, dateFrom, dateTo time.Time) ([]Slot, error) {
 	q := `
 SELECT s.id, s.pool_id, p.name, t.name, s.starts_at, s.ends_at,
-       s.capacity, s.booked_count, (s.capacity - s.booked_count) as free_count,
+       s.capacity, COALESCE(bc.booked_count, 0) AS booked_count, (s.capacity - COALESCE(bc.booked_count, 0)) as free_count,
        s.price::text, s.status::text, s.training_type_id
 FROM slots s
 JOIN pools p ON p.id = s.pool_id
 JOIN training_types t ON t.id = s.training_type_id
+LEFT JOIN (
+  SELECT slot_id, count(*)::int AS booked_count
+  FROM bookings
+  WHERE status IN ('pending_payment','reserved','confirmed','attended','no_show')
+  GROUP BY slot_id
+) bc ON bc.slot_id = s.id
 WHERE s.pool_id = $1
   AND s.starts_at >= $2
   AND s.starts_at < $3
@@ -186,6 +201,28 @@ ORDER BY s.starts_at`
 	return out, rows.Err()
 }
 
+func (s *Store) ListTrainingTypes(ctx context.Context) ([]TrainingType, error) {
+	q := `
+SELECT id, name, duration_minutes, default_capacity, price::text
+FROM training_types
+WHERE is_active = true
+ORDER BY id`
+	rows, err := s.pool.Query(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]TrainingType, 0)
+	for rows.Next() {
+		var t TrainingType
+		if err := rows.Scan(&t.ID, &t.Name, &t.DurationMinutes, &t.DefaultCapacity, &t.Price); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) CreateBooking(ctx context.Context, userID, slotID int64, reserveTTLMin int) (Booking, error) {
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -199,11 +236,18 @@ INSERT INTO bookings (user_id, slot_id, status, reserved_until, price)
 SELECT $1, s.id, 'pending_payment', NOW() + ($3::int || ' minutes')::interval, s.price
 FROM slots s
 WHERE s.id = $2
+ON CONFLICT (user_id, slot_id)
+DO UPDATE
+SET status = 'pending_payment',
+    reserved_until = NOW() + ($3::int || ' minutes')::interval,
+    price = EXCLUDED.price,
+    cancel_reason = NULL
+WHERE bookings.status IN ('cancelled', 'expired')
 RETURNING id, user_id, slot_id, status::text, reserved_until, price::text, created_at`
 	err = tx.QueryRow(ctx, q, userID, slotID, reserveTTLMin).
 		Scan(&b.ID, &b.UserID, &b.SlotID, &b.Status, &b.ReservedUntil, &b.Price, &b.CreatedAt)
 	if err != nil {
-		if isUnique(err) {
+		if errors.Is(err, pgx.ErrNoRows) || isUnique(err) {
 			return Booking{}, ErrConflict
 		}
 		return Booking{}, err
@@ -227,11 +271,13 @@ WHERE s.id = $1`
 func (s *Store) ListMyBookings(ctx context.Context, userID int64) ([]Booking, error) {
 	q := `
 SELECT b.id, b.user_id, b.slot_id, b.status::text, b.reserved_until, b.price::text, b.created_at,
-       s.starts_at, p.name
+       s.starts_at, p.name, t.name
 FROM bookings b
 JOIN slots s ON s.id = b.slot_id
 JOIN pools p ON p.id = s.pool_id
+JOIN training_types t ON t.id = s.training_type_id
 WHERE b.user_id = $1
+  AND b.status <> 'cancelled'
 ORDER BY s.starts_at DESC`
 	rows, err := s.pool.Query(ctx, q, userID)
 	if err != nil {
@@ -241,7 +287,7 @@ ORDER BY s.starts_at DESC`
 	out := make([]Booking, 0)
 	for rows.Next() {
 		var b Booking
-		if err := rows.Scan(&b.ID, &b.UserID, &b.SlotID, &b.Status, &b.ReservedUntil, &b.Price, &b.CreatedAt, &b.StartsAt, &b.PoolName); err != nil {
+		if err := rows.Scan(&b.ID, &b.UserID, &b.SlotID, &b.Status, &b.ReservedUntil, &b.Price, &b.CreatedAt, &b.StartsAt, &b.PoolName, &b.TrainingType); err != nil {
 			return nil, err
 		}
 		out = append(out, b)
@@ -362,7 +408,7 @@ func (s *Store) CreateSlot(ctx context.Context, poolID, trainingTypeID int64, st
 	var id int64
 	q := `
 INSERT INTO slots (pool_id, training_type_id, starts_at, ends_at, capacity, price, status)
-VALUES ($1,$2,$3,$3 + interval '60 minute',$4,$5,'open')
+VALUES ($1,$2,$3::timestamptz,$3::timestamptz + interval '60 minutes',$4,$5::numeric,'open')
 RETURNING id`
 	err := s.pool.QueryRow(ctx, q, poolID, trainingTypeID, startsAt, capacity, price).Scan(&id)
 	if isUnique(err) {

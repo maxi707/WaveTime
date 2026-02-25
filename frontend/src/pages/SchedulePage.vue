@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { createBooking, healthz, listPools, listSchedule } from '../api'
 
 const backendStatus = ref('checking')
@@ -13,6 +13,7 @@ const scheduleRange = reactive({
   to: plusDaysISO(7),
 })
 const schedule = ref([])
+let filterTimer = null
 
 const groupedSchedule = computed(() => {
   const groups = new Map()
@@ -88,6 +89,15 @@ async function loadSchedule() {
   )
 }
 
+function scheduleAutoReload() {
+  if (filterTimer) {
+    window.clearTimeout(filterTimer)
+  }
+  filterTimer = window.setTimeout(() => {
+    loadSchedule().catch((e) => setToast(e.message || 'Не удалось обновить расписание'))
+  }, 250)
+}
+
 async function bookSlot(slotId) {
   busy.value = true
   try {
@@ -110,6 +120,25 @@ onMounted(async () => {
     setToast(e.message || 'Не удалось загрузить расписание')
   }
 })
+
+onBeforeUnmount(() => {
+  if (filterTimer) {
+    window.clearTimeout(filterTimer)
+  }
+})
+
+watch(selectedPool, () => {
+  if (!selectedPool.value) return
+  scheduleAutoReload()
+})
+
+watch(
+  () => [scheduleRange.from, scheduleRange.to],
+  () => {
+    if (!selectedPool.value) return
+    scheduleAutoReload()
+  },
+)
 </script>
 
 <template>
